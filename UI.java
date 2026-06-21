@@ -1,129 +1,229 @@
 import javax.swing.*;
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Graphics;
+import java.awt.*;
+import java.awt.event.*;
 import java.util.List;
 
-// WINDOW
+class UI extends JFrame {
 
-public class UI extends JFrame {
+    Game game;
 
-    GameUI gameUI;
-    LogUI logUI;
-    ActionUI actUI;
+    GamePanel gameP;
+    LogPanel logP;
+    ActionPanel actP;
 
-    public UI(Game game) {
-        
-        setTitle("Complex RPG");
-        setSize(1000, 600);
+    enum UIState {
+        NORMAL,
+        COMBAT,
+        SHOP
+    }
+
+    UIState state = UIState.NORMAL;
+
+    UI(Game g) {
+
+        game = g;
+
+        setTitle("RPG Engine");
+        setSize(900, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        gameUI = new GameUI();
-        logUI = new LogUI();
-        actUI = new ActionUI(game);
+        gameP = new GamePanel(g);
+        logP = new LogPanel();
+        actP = new ActionPanel(g);
 
-        add(gameUI, BorderLayout.CENTER);
-        add(logUI, BorderLayout.EAST);
-        add(actUI, BorderLayout.SOUTH);
+        add(gameP, BorderLayout.CENTER);
+        add(logP, BorderLayout.EAST);
+        add(actP, BorderLayout.SOUTH);
+
+        setFocusable(true);
+
+        KeyboardFocusManager.getCurrentKeyboardFocusManager()
+            .addKeyEventDispatcher(e -> {
+
+                if (e.getID() != KeyEvent.KEY_PRESSED) return false;
+
+                if (state != UIState.NORMAL) return false;
+
+                int k = e.getKeyCode();
+
+                if (k == KeyEvent.VK_W) game.movePlayer(0, -1);
+                if (k == KeyEvent.VK_S) game.movePlayer(0, 1);
+                if (k == KeyEvent.VK_A) game.movePlayer(-1, 0);
+                if (k == KeyEvent.VK_D) game.movePlayer(1, 0);
+
+                return false;
+            });
+
+        Timer t = new Timer(16, e -> {
+
+            game.tick();
+            refreshUI(game);
+            repaint();
+        });
+
+        t.start();
     }
 
     void showUI() {
-        
+
         setVisible(true);
     }
 
-    void refreshUI(Game game) {
-        
-        logUI.update(game.eLog.get());
+    void refreshUI(Game g) {
+
+        logP.set(g.eLog.log);
+    }
+
+    void setCombat(boolean b) {
+
+        state = b ? UIState.COMBAT : UIState.NORMAL;
+
+        actP.setCombat(b);
+    }
+
+    void showShopButton(boolean b) {
+
+        actP.shop.setVisible(b);
+    }
+
+    void showShop(Shop s) {
+
+        state = UIState.SHOP;
+
+        StringBuilder sb = new StringBuilder();
+
+        for (Item i : s.items) {
+
+            sb.append(i.name)
+              .append(" : ")
+              .append(i.cost)
+              .append("\n");
+        }
+
+        JOptionPane.showMessageDialog(this, sb.toString());
+
+        state = UIState.NORMAL;
     }
 }
 
+class GamePanel extends JPanel {
 
-// WORLD PANEL
+    Game game;
 
-class GameUI extends JPanel {
+    GamePanel(Game g) {
 
-    GameUI() {
-        
+        game = g;
         setBackground(Color.BLACK);
     }
 
     protected void paintComponent(Graphics g) {
-        
+
         super.paintComponent(g);
-        g.setColor(Color.WHITE);
-        g.drawString("WORLD VIEW (EMPTY)", 50, 50);
+
+        // GRID
+        for (int x = 0; x < 20; x++) {
+            for (int y = 0; y < 20; y++) {
+
+                g.setColor(Color.DARK_GRAY);
+                g.fillRect(x * 30, y * 30, 28, 28);
+            }
+        }
+
+        g.setColor(Color.BLUE);
+        g.fillOval(game.player.x * 30, game.player.y * 30, 20, 20);
+
+        g.setColor(Color.RED);
+
+        for (Enemy e : game.enemies) {
+
+            if (e == null || e.dead()) continue;
+
+            int ex = e.x * 30;
+            int ey = e.y * 30;
+
+            g.fillOval(ex + 5, ey + 5, 10, 10);
+        }
     }
 }
 
-
-// LOG PANEL
-
-class LogUI extends JPanel {
+class LogPanel extends JPanel {
 
     JTextArea area = new JTextArea(30, 20);
 
-    LogUI() {
-        
-        area.setEditable(false);
+    LogPanel() {
+
         setLayout(new BorderLayout());
         add(new JScrollPane(area), BorderLayout.CENTER);
     }
 
-    void update(List<String> log) {
-        
+    void set(List<String> l) {
+
         StringBuilder sb = new StringBuilder();
-        for (String s : log) sb.append(s).append("\n");
+
+        for (String s : l)
+            sb.append(s).append("\n");
+
         area.setText(sb.toString());
     }
 }
 
+class ActionPanel extends JPanel {
 
-// ACTION PANEL
+    JButton explore = new JButton("Explore");
+    JButton item = new JButton("Item");
+    JButton hit = new JButton("Hit");
+    JButton run = new JButton("Run");
+    JButton shop = new JButton("Shop");
 
-class ActionUI extends JPanel {
+    ActionPanel(Game g) {
 
-    ActionUI(Game game) {
-        
         setLayout(new FlowLayout());
 
-        JButton explore = new JButton("Explore");
-        JButton shop = new JButton("Shop");
-        JButton talk = new JButton("Talk");
-        JButton fight = new JButton("Fight");
-
-        explore.addActionListener(e ->
-                game.trigger("Explore"));
-
-        shop.addActionListener(e ->
-                game.trigger("Shop"));
-
-        talk.addActionListener(e ->
-                game.trigger("Talk"));
-
-        fight.addActionListener(e ->
-                game.trigger("Fight"));
+        explore.addActionListener(e -> g.trigger("Explore"));
+        item.addActionListener(e -> showInv(g));
+        hit.addActionListener(e -> g.hit());
+        run.addActionListener(e -> g.run());
+        shop.addActionListener(e -> g.openShop());
 
         add(explore);
+        add(item);
+        add(hit);
+        add(run);
         add(shop);
-        add(talk);
-        add(fight);
+
+        setCombat(false);
+    }
+
+    void showInv(Game g) {
+
+        StringBuilder sb = new StringBuilder();
+
+        for (Item i : g.inv.items) {
+
+            sb.append(i.name).append("\n");
+        }
+
+        JOptionPane.showMessageDialog(this, sb.toString());
+    }
+
+    void setCombat(boolean b) {
+
+        hit.setVisible(b);
+        run.setVisible(b);
     }
 }
-
-
-// STARTUP
 
 class Main {
 
     public static void main(String[] args) {
-        
-        Game game = new Game();
-        UI ui = new UI(game);
 
-        game.setUI(ui);
+        Game g = new Game();
+        UI ui = new UI(g);
+
+        g.setUI(ui);
+
+        Enemy e = EnemySpawning.create();
 
         ui.showUI();
     }
